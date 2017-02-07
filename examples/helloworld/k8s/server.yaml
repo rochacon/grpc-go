@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: grpc-hello-server
+  labels:
+    app: grpc-hello-server
+spec:
+  containers:
+  - name: grpc-hello-server
+    args:
+    - /server
+    image: quay.io/rochacon/grpc-hello-world:v1
+    ports:
+    - containerPort: 50051
+      name: grpc
+    - containerPort: 9090
+      name: metrics
+  hostNetwork: true
+  restartPolicy: Always

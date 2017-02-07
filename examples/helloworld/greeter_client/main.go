@@ -21,22 +21,36 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
-	"os"
+	"net/http"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
 const (
-	address     = "localhost:50051"
 	defaultName = "world"
 )
 
 func main() {
+	address := flag.String("address", "localhost:50051", "gRPC server endpoint.")
+	concurrency := flag.Int("concurrency", 3, "Number of concurrent workers.")
+	sleep := flag.Int("sleep", 0, "Number of seconds to sleep between calls.")
+	flag.Parse()
+
+	// metrics server
+	http.Handle("/metrics", promhttp.Handler())
+	log.Println("Metric server listening on port :9090")
+	go http.ListenAndServe(":9090", nil)
+
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	log.Println("Connecting to gRPC server", *address)
+	conn, err := grpc.Dial(*address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -45,14 +59,31 @@ func main() {
 
 	// Contact the server and print out its response.
 	name := defaultName
-	if len(os.Args) > 1 {
-		name = os.Args[1]
+	if flag.NArg() > 1 {
+		name = strings.Join(flag.Args(), " ")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	r, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+	log.Println("Name:", name)
+
+	log.Println("Launching", *concurrency, "workers")
+	wg := &sync.WaitGroup{}
+	for i := 0; i < *concurrency; i++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, sleep int) {
+			defer wg.Done()
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				_, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
+				cancel()
+				if err != nil {
+					log.Println("error on SayHello call:", err)
+				}
+				if sleep > 0 {
+					log.Println("Sleeping for", sleep, "seconds")
+					time.Sleep(time.Second * time.Duration(sleep))
+				}
+			}
+		}(wg, *sleep)
 	}
-	log.Printf("Greeting: %s", r.GetMessage())
+	wg.Wait()
+	log.Println("Shutting down")
 }

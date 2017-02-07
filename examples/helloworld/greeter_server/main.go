@@ -13,8 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- */
+ * */
 
 // Package main implements a server for Greeter service.
 package main
@@ -23,9 +22,12 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
+	"google.golang.org/grpc/reflection"
 )
 
 const (
@@ -39,13 +41,22 @@ func sayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) 
 }
 
 func main() {
+	// metrics server
+	http.Handle("/metrics", promhttp.Handler())
+	log.Println("Metric server listening on port :9090")
+	go http.ListenAndServe(":9090", nil)
+
+	// gRPC server
+	log.Println("gRPC server listening on port", port)
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
 	pb.RegisterGreeterService(s, &pb.GreeterService{SayHello: sayHello})
+	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		log.Fatalf("failed to serve:", err)
 	}
+	log.Println("Shutting down")
 }
