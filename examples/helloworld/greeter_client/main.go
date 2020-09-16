@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
@@ -50,7 +51,7 @@ func main() {
 
 	// Set up a connection to the server.
 	log.Println("Connecting to gRPC server", *address)
-	conn, err := grpc.Dial(*address, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(*address, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
