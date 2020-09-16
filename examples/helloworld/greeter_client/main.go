@@ -28,30 +28,39 @@ import (
 	"sync"
 	"time"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
-const (
-	defaultName = "world"
-)
-
 func main() {
-	address := flag.String("address", "localhost:50051", "gRPC server endpoint.")
+	address := flag.String("address", "127.0.0.1:50051", "gRPC server endpoint.")
 	concurrency := flag.Int("concurrency", 3, "Number of concurrent workers.")
 	sleep := flag.Duration("sleep", time.Duration(0), "Duration to sleep between calls.")
+	tls := flag.Bool("tls", false, "Use TLS to connect to server")
 	flag.Parse()
 
 	// metrics server
+	grpc_prometheus.EnableClientHandlingTimeHistogram()
 	http.Handle("/metrics", promhttp.Handler())
 	log.Println("Metric server listening on port :9090")
 	go http.ListenAndServe(":9090", nil)
 
 	// Set up a connection to the server.
 	log.Println("Connecting to gRPC server", *address)
-	conn, err := grpc.Dial(*address, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")), grpc.WithBlock())
+	clientOpts := []grpc.DialOption{
+		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
+		grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor),
+		grpc.WithBlock(),
+	}
+	if *tls {
+		clientOpts = append(clientOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
+	} else {
+		clientOpts = append(clientOpts, grpc.WithInsecure())
+	}
+	conn, err := grpc.Dial(*address, clientOpts...)
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -59,7 +68,7 @@ func main() {
 	c := pb.NewGreeterClient(conn)
 
 	// Contact the server and print out its response.
-	name := defaultName
+	name := "gRPC"
 	if flag.NArg() > 1 {
 		name = strings.Join(flag.Args(), " ")
 	}

@@ -20,10 +20,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net"
 	"net/http"
+	"os"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -31,38 +34,61 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-const (
-	port = ":50051"
-)
-
 // sayHello implements helloworld.GreeterServer.SayHello
 func sayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
-	log.Printf("Received: %v", in.GetName())
 	return &pb.HelloReply{Message: "Hello " + in.GetName()}, nil
 }
 
+func defaultAddr() string {
+	if p := os.Getenv("PORT"); p != "" {
+		return ":" + p
+	}
+	return ":50051"
+}
+
 func main() {
+	addr := flag.String("addr", defaultAddr(), "gRPC server port (defaults to :$PORT or :50051)")
+	metricsAddr := flag.String("metrics-addr", ":9090", "gRPC metrics server port (defaults to :9090)")
+	tlsCrt := flag.String("tls-crt", "", "gRPC TLS Certificate")
+	tlsKey := flag.String("tls-key", "", "gRPC TLS Private Key")
+	flag.Parse()
+
 	// metrics server
+	grpc_prometheus.EnableHandlingTimeHistogram()
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println("Metric server listening on port :9090")
-	go http.ListenAndServe(":9090", nil)
+	log.Println("Metric server listening on", *metricsAddr)
+	go http.ListenAndServe(*metricsAddr, nil)
 
 	// gRPC server
-	log.Println("loading certificates...")
-	creds, err := credentials.NewServerTLSFromFile("/certs/tls.crt", "/certs/tls.key")
-	if err != nil {
-		log.Fatalf("Failed to generate credentials %v", err)
+	var srv *grpc.Server
+	var srvOpts = []grpc.ServerOption{
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		// grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
+		// grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
 	}
-	log.Println("gRPC server listening on port", port)
-	lis, err := net.Listen("tcp", port)
+	if *tlsCrt != "" && *tlsKey != "" {
+		log.Println("loading certificates...")
+		creds, err := credentials.NewServerTLSFromFile(*tlsCrt, *tlsKey)
+		if err != nil {
+			log.Fatalf("Failed to generate credentials %v", err)
+		}
+		srvOpts = append(srvOpts, grpc.Creds(creds))
+	}
+
+	srv = grpc.NewServer(srvOpts...)
+	grpc_prometheus.DefaultServerMetrics.InitializeMetrics(srv)
+
+	pb.RegisterGreeterService(srv, &pb.GreeterService{SayHello: sayHello})
+	reflection.Register(srv)
+
+	log.Println("gRPC server listening on", *addr)
+	lis, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	// s := grpc.NewServer()
-	s := grpc.NewServer(grpc.Creds(creds))
-	pb.RegisterGreeterService(s, &pb.GreeterService{SayHello: sayHello})
-	reflection.Register(s)
-	if err := s.Serve(lis); err != nil {
+	defer lis.Close()
+	if err := srv.Serve(lis); err != nil {
 		log.Fatalf("failed to serve:", err)
 	}
 	log.Println("Shutting down")
