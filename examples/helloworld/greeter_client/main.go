@@ -86,9 +86,12 @@ func main() {
 		go func(wg *sync.WaitGroup, sleep time.Duration) {
 			defer wg.Done()
 			for {
-				_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
+				start := time.Now()
+				reply, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
 				if err != nil {
 					log.Println("error on SayHello call:", err)
+				} else {
+					log.Printf("HelloReply.Message=%q in %s", reply.Message, time.Now().Sub(start))
 				}
 				if sleep > 0 {
 					log.Println("Sleeping for", sleep, "seconds")
