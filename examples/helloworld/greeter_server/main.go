@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 	"google.golang.org/grpc/reflection"
 )
@@ -64,12 +65,18 @@ func main() {
 	go http.ListenAndServe(":9090", nil)
 
 	// gRPC server
+	log.Println("loading certificates...")
+	creds, err := credentials.NewServerTLSFromFile("/certs/tls.crt", "/certs/tls.key")
+	if err != nil {
+		log.Fatalf("Failed to generate credentials %v", err)
+	}
 	log.Println("gRPC server listening on port", port)
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.Creds(creds))
+	// s := grpc.NewServer()
 	pb.RegisterGreeterServer(s, &server{})
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
