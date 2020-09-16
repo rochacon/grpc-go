@@ -73,10 +73,13 @@ func main() {
 			defer wg.Done()
 			for {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				_, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
+				start := time.Now()
+				reply, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
 				cancel()
 				if err != nil {
 					log.Println("error on SayHello call:", err)
+				} else {
+					log.Printf("HelloReply.Message=%q in %s", reply.Message, time.Now().Sub(start))
 				}
 				if sleep > 0 {
 					log.Println("Sleeping for", sleep, "seconds")
