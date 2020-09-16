@@ -55,7 +55,7 @@ const (
 func main() {
 	address := flag.String("address", "localhost:50051", "gRPC server endpoint.")
 	concurrency := flag.Int("concurrency", 3, "Number of concurrent workers.")
-	sleep := flag.Int("sleep", 0, "Number of seconds to sleep between calls.")
+	sleep := flag.Duration("sleep", time.Duration(0), "Duration to sleep between calls.")
 	flag.Parse()
 
 	// metrics server
@@ -83,7 +83,7 @@ func main() {
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
-		go func(wg *sync.WaitGroup, sleep int) {
+		go func(wg *sync.WaitGroup, sleep time.Duration) {
 			defer wg.Done()
 			for {
 				_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
@@ -92,7 +92,7 @@ func main() {
 				}
 				if sleep > 0 {
 					log.Println("Sleeping for", sleep, "seconds")
-					time.Sleep(time.Second * time.Duration(sleep))
+					time.Sleep(sleep)
 				}
 			}
 		}(wg, *sleep)
