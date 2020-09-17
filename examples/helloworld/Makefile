@@ -1,10 +1,10 @@
 default: client server docker
 
 client:
-	GOOS=linux go build -a -v -ldflags '--extldflags "--static"' -o client ./greeter_client/
+	GOOS=linux go build -v -ldflags '--extldflags "--static"' -o client ./greeter_client/
 
 server:
-	GOOS=linux go build -a -v -ldflags '--extldflags "--static"' -o server ./greeter_server/
+	GOOS=linux go build -v -ldflags '--extldflags "--static"' -o server ./greeter_server/
 
 docker: client server
 	# docker build -f examples/helloworld/Dockerfile.build -t quay.io/rochacon/grpc-hello-world:build ../../../
