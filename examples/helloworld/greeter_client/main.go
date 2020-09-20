@@ -51,9 +51,9 @@ func main() {
 	// Set up a connection to the server.
 	log.Println("Connecting to gRPC server", *address)
 	clientOpts := []grpc.DialOption{
+		grpc.WithBlock(),
 		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
 		grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor),
-		grpc.WithBlock(),
 	}
 	if *tls {
 		clientOpts = append(clientOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
