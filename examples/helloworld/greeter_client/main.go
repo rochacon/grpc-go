@@ -60,7 +60,9 @@ func main() {
 	} else {
 		clientOpts = append(clientOpts, grpc.WithInsecure())
 	}
-	conn, err := grpc.Dial(*address, clientOpts...)
+	dialTimeout, dtCancel := context.WithTimeout(context.Background(), time.Duration(time.Second))
+	defer dtCancel()
+	conn, err := grpc.DialContext(dialTimeout, *address, clientOpts...)
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
