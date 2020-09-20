@@ -45,11 +45,11 @@ func main() {
 	// metrics server
 	grpc_prometheus.EnableClientHandlingTimeHistogram()
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println("Metric server listening on port :9090")
+	log.Println("metrics server listening on port :9090")
 	go http.ListenAndServe(":9090", nil)
 
 	// Set up a connection to the server.
-	log.Println("Connecting to gRPC server", *address)
+	log.Println("connecting to gRPC server", *address)
 	clientOpts := []grpc.DialOption{
 		grpc.WithBlock(),
 		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
@@ -72,9 +72,9 @@ func main() {
 	if flag.NArg() > 1 {
 		name = strings.Join(flag.Args(), " ")
 	}
-	log.Println("Name:", name)
+	log.Println("name:", name)
 
-	log.Println("Launching", *concurrency, "workers")
+	log.Println("launching", *concurrency, "workers")
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
@@ -91,12 +91,12 @@ func main() {
 					log.Printf("HelloReply.Message=%q in %s", reply.Message, time.Now().Sub(start))
 				}
 				if sleep > 0 {
-					log.Println("Sleeping for", sleep, "seconds")
+					log.Println("sleeping for", sleep, "seconds")
 					time.Sleep(sleep)
 				}
 			}
 		}(wg, *sleep)
 	}
 	wg.Wait()
-	log.Println("Shutting down")
+	log.Println("shutting down")
 }
