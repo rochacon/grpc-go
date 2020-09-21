@@ -60,7 +60,7 @@ func main() {
 	} else {
 		clientOpts = append(clientOpts, grpc.WithInsecure())
 	}
-	dialTimeout, dtCancel := context.WithTimeout(context.Background(), time.Second)
+	dialTimeout, dtCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer dtCancel()
 	conn, err := grpc.DialContext(dialTimeout, *addr, clientOpts...)
 	if err != nil {
@@ -75,7 +75,7 @@ func main() {
 		name = strings.Join(flag.Args(), " ")
 	}
 	log.Println("name:", name)
-
+	log.Printf("sleeping %s between requests", *sleep)
 	log.Println("launching", *concurrency, "workers")
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *concurrency; i++ {
@@ -93,7 +93,6 @@ func main() {
 					log.Printf("HelloReply.Message=%q in %s", reply.Message, time.Now().Sub(start))
 				}
 				if sleep > 0 {
-					log.Println("sleeping for", sleep, "seconds")
 					time.Sleep(sleep)
 				}
 			}
