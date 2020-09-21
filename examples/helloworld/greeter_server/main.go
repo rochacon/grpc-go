@@ -117,7 +117,6 @@ func main() {
 			AllowedOrigins: []string{"*"},
 			ExposedHeaders: []string{"grpc-status", "grpc-message"},
 		})
-
 		h1s := &http.Server{
 			Addr:    *addr,
 			Handler: corsH.Handler(grpcweb.WrapServer(grpcServer)),
