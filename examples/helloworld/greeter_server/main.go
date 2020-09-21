@@ -25,9 +25,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 
+	"github.com/gorilla/handlers"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
@@ -50,13 +54,14 @@ func main() {
 	addr := flag.String("addr", defaultAddr(), "gRPC server port (defaults to :$PORT or :50051)")
 	metricsAddr := flag.String("metrics-addr", ":9090", "gRPC metrics server port (defaults to :9090)")
 	tlsCrt := flag.String("tls-crt", "", "gRPC TLS Certificate")
+	useGRPCGoServe := flag.Bool("use-grpc-go-serve", false, "use grpc-go Serve method, disabling CORS and HTTP compatibility")
 	tlsKey := flag.String("tls-key", "", "gRPC TLS Private Key")
 	flag.Parse()
 
 	// metrics server
+	log.Println("listening for metrics at", *metricsAddr)
 	grpc_prometheus.EnableHandlingTimeHistogram()
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println("Metric server listening on", *metricsAddr)
 	go http.ListenAndServe(*metricsAddr, nil)
 
 	// gRPC server
@@ -64,10 +69,8 @@ func main() {
 	var srvOpts = []grpc.ServerOption{
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
-		// grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-		// grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
 	}
-	if *tlsCrt != "" && *tlsKey != "" {
+	if *useGRPCGoServe && *tlsCrt != "" && *tlsKey != "" {
 		log.Println("loading certificates...")
 		creds, err := credentials.NewServerTLSFromFile(*tlsCrt, *tlsKey)
 		if err != nil {
@@ -78,18 +81,65 @@ func main() {
 
 	srv = grpc.NewServer(srvOpts...)
 	grpc_prometheus.DefaultServerMetrics.InitializeMetrics(srv)
-
-	pb.RegisterGreeterService(srv, &pb.GreeterService{SayHello: sayHello})
+	pb.RegisterGreeterService(srv, &pb.GreeterService{
+		SayHello: sayHello,
+	})
 	reflection.Register(srv)
 
-	log.Println("gRPC server listening on", *addr)
-	lis, err := net.Listen("tcp", *addr)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	defer lis.Close()
-	if err := srv.Serve(lis); err != nil {
-		log.Fatalf("failed to serve:", err)
+	log.Println("listening for gRPC at", *addr)
+	if *useGRPCGoServe {
+		log.Printf("using grpc.Server.Serve")
+		lis, err := net.Listen("tcp", *addr)
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+		defer lis.Close()
+		if err := srv.Serve(lis); err != nil {
+			log.Fatalf("failed to serve: %s", err)
+		}
+	} else {
+		var err error
+		handler := grpcHandlerFunc(srv)
+		if *tlsCrt != "" && *tlsKey != "" {
+			log.Printf("using net/http.ListenAndServeTLS")
+			err = http.ListenAndServeTLS(*addr, *tlsCrt, *tlsKey, handler)
+		} else {
+			log.Printf("using net/http.ListenAndServe plus h2c support")
+			cors := handlers.CORS(
+				handlers.AllowCredentials(),
+				handlers.AllowedHeaders([]string{
+					"Accept",
+					"Accept-Encoding",
+					"Authorization",
+					"Content-Length",
+					"Content-Type",
+					"X-CSRF-Token",
+					"XMLHttpRequest",
+					"grpc-message",
+					"grpc-status",
+					"x-grpc-web",
+					"x-user-agent",
+				}),
+				handlers.AllowedMethods([]string{"DELETE", "GET", "OPTIONS", "POST", "PUT"}),
+				handlers.AllowedOrigins([]string{"*"}),
+				handlers.ExposedHeaders([]string{"grpc-status", "grpc-message"}),
+			)
+			handler = cors(h2c.NewHandler(handler, &http2.Server{}))
+			err = http.ListenAndServe(*addr, handler)
+		}
+		if err != nil {
+			log.Fatalf("failed to serve: %s", err)
+		}
 	}
 	log.Println("Shutting down")
+}
+
+func grpcHandlerFunc(grpcServer *grpc.Server) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			http.DefaultServeMux.ServeHTTP(w, r)
+		}
+	})
 }
