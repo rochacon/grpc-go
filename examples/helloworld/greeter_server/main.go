@@ -29,6 +29,7 @@ import (
 
 	"github.com/gorilla/handlers"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -135,9 +136,10 @@ func main() {
 }
 
 func grpcHandlerFunc(grpcServer *grpc.Server) http.Handler {
+	wrapped := grpcweb.WrapServer(grpcServer)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			wrapped.ServeHTTP(w, r)
 		} else {
 			http.DefaultServeMux.ServeHTTP(w, r)
 		}
