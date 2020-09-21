@@ -36,7 +36,7 @@ import (
 )
 
 func main() {
-	address := flag.String("address", "127.0.0.1:50051", "gRPC server endpoint.")
+	addr := flag.String("addr", "127.0.0.1:50051", "gRPC server endpoint.")
 	concurrency := flag.Int("concurrency", 3, "Number of concurrent workers.")
 	sleep := flag.Duration("sleep", time.Duration(0), "Duration to sleep between calls.")
 	tls := flag.Bool("tls", false, "Use TLS to connect to server")
@@ -49,7 +49,7 @@ func main() {
 	go http.ListenAndServe(":9090", nil)
 
 	// Set up a connection to the server.
-	log.Println("connecting to gRPC server", *address)
+	log.Println("connecting to gRPC server", *addr)
 	clientOpts := []grpc.DialOption{
 		grpc.WithBlock(),
 		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
@@ -62,7 +62,7 @@ func main() {
 	}
 	dialTimeout, dtCancel := context.WithTimeout(context.Background(), time.Duration(time.Second))
 	defer dtCancel()
-	conn, err := grpc.DialContext(dialTimeout, *address, clientOpts...)
+	conn, err := grpc.DialContext(dialTimeout, *addr, clientOpts...)
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
