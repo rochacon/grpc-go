@@ -57,6 +57,7 @@ func main() {
 	useGRPCGoServe := flag.Bool("use-grpc-go-serve", false, "use grpc-go Serve method, disabling CORS and HTTP compatibility")
 	tlsKey := flag.String("tls-key", "", "gRPC TLS Private Key")
 	flag.Parse()
+	tlsEnabled := *tlsCrt != "" && *tlsKey != ""
 
 	// metrics server setup
 	log.Println("listening for metrics at", *metricsAddr)
@@ -69,7 +70,7 @@ func main() {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	}
-	if *useGRPCGoServe && *tlsCrt != "" && *tlsKey != "" {
+	if tlsEnabled && *useGRPCGoServe {
 		log.Println("loading certificates...")
 		creds, err := credentials.NewServerTLSFromFile(*tlsCrt, *tlsKey)
 		if err != nil {
@@ -121,7 +122,7 @@ func main() {
 			Addr:    *addr,
 			Handler: corsH.Handler(grpcweb.WrapServer(grpcServer)),
 		}
-		if *tlsCrt != "" && *tlsKey != "" {
+		if tlsEnabled {
 			log.Printf("using net/http.ListenAndServeTLS")
 			err = h1s.ListenAndServeTLS(*tlsCrt, *tlsKey)
 		} else {
