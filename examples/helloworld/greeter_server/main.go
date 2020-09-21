@@ -100,32 +100,32 @@ func main() {
 		}
 	} else {
 		var err error
-		handler := grpcHandlerFunc(srv)
+		corsH := cors.New(cors.Options{
+			AllowCredentials: true,
+			AllowedHeaders: []string{
+				"Accept",
+				"Accept-Encoding",
+				"Authorization",
+				"Content-Length",
+				"Content-Type",
+				"XMLHttpRequest",
+				"grpc-message",
+				"grpc-status",
+				"x-grpc-web",
+				"x-user-agent",
+			},
+			AllowedMethods: []string{http.MethodOptions, http.MethodPost},
+			AllowedOrigins: []string{"*"},
+			ExposedHeaders: []string{"grpc-status", "grpc-message"},
+		})
+		handler := corsH.Handler(grpcHandlerFunc(srv))
+
 		if *tlsCrt != "" && *tlsKey != "" {
 			log.Printf("using net/http.ListenAndServeTLS")
 			err = http.ListenAndServeTLS(*addr, *tlsCrt, *tlsKey, handler)
 		} else {
 			log.Printf("using net/http.ListenAndServe plus h2c support")
-			corsH := cors.New(cors.Options{
-				AllowCredentials: true,
-				AllowedHeaders: []string{
-					"Accept",
-					"Accept-Encoding",
-					"Authorization",
-					"Content-Length",
-					"Content-Type",
-					"XMLHttpRequest",
-					"grpc-message",
-					"grpc-status",
-					"x-grpc-web",
-					"x-user-agent",
-				},
-				AllowedMethods: []string{http.MethodOptions, http.MethodPost},
-				AllowedOrigins: []string{"*"},
-				ExposedHeaders: []string{"grpc-status", "grpc-message"},
-			})
-			handler = corsH.Handler(h2c.NewHandler(handler, &http2.Server{}))
-			err = http.ListenAndServe(*addr, handler)
+			err = http.ListenAndServe(*addr, h2c.NewHandler(handler, &http2.Server{}))
 		}
 		if err != nil {
 			log.Fatalf("failed to serve: %s", err)
