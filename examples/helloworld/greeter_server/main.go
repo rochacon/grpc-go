@@ -25,6 +25,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"time"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
@@ -94,6 +96,13 @@ func main() {
 			log.Fatalf("failed to listen: %v", err)
 		}
 		defer lis.Close()
+		go func() {
+			exit := make(chan os.Signal, 1)
+			signal.Notify(exit, os.Interrupt, os.Kill)
+
+			log.Printf("received signal %q, stopping", <-exit)
+			grpcServer.Stop()
+		}()
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %s", err)
 		}
@@ -121,6 +130,19 @@ func main() {
 			Addr:    *addr,
 			Handler: corsH.Handler(grpcweb.WrapServer(grpcServer)),
 		}
+		go func() {
+			exit := make(chan os.Signal, 1)
+			signal.Notify(exit, os.Interrupt, os.Kill)
+
+			timeout := 60 * time.Second
+			log.Printf("received signal %q, forcefully shutting down in %s", <-exit, timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			grpcServer.Stop()
+			if err := h1s.Shutdown(ctx); err != nil {
+				log.Fatalf("failed to gracefully shutdown server: %s", err)
+			}
+		}()
 		if tlsEnabled {
 			log.Printf("using net/http.ListenAndServeTLS")
 			err = h1s.ListenAndServeTLS(*tlsCrt, *tlsKey)
@@ -130,9 +152,9 @@ func main() {
 			h1s.Handler = h2c.NewHandler(h1s.Handler, h2s)
 			err = h1s.ListenAndServe()
 		}
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("failed to serve: %s", err)
 		}
 	}
-	log.Println("Shutting down")
+	log.Println("done")
 }

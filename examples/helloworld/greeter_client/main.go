@@ -60,7 +60,7 @@ func main() {
 	} else {
 		clientOpts = append(clientOpts, grpc.WithInsecure())
 	}
-	dialTimeout, dtCancel := context.WithTimeout(context.Background(), time.Duration(time.Second))
+	dialTimeout, dtCancel := context.WithTimeout(context.Background(), time.Second)
 	defer dtCancel()
 	conn, err := grpc.DialContext(dialTimeout, *addr, clientOpts...)
 	if err != nil {
