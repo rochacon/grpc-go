@@ -27,10 +27,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gorilla/handlers"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/cors"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -106,26 +106,25 @@ func main() {
 			err = http.ListenAndServeTLS(*addr, *tlsCrt, *tlsKey, handler)
 		} else {
 			log.Printf("using net/http.ListenAndServe plus h2c support")
-			cors := handlers.CORS(
-				handlers.AllowCredentials(),
-				handlers.AllowedHeaders([]string{
+			corsH := cors.New(cors.Options{
+				AllowCredentials: true,
+				AllowedHeaders: []string{
 					"Accept",
 					"Accept-Encoding",
 					"Authorization",
 					"Content-Length",
 					"Content-Type",
-					"X-CSRF-Token",
 					"XMLHttpRequest",
 					"grpc-message",
 					"grpc-status",
 					"x-grpc-web",
 					"x-user-agent",
-				}),
-				handlers.AllowedMethods([]string{"DELETE", "GET", "OPTIONS", "POST", "PUT"}),
-				handlers.AllowedOrigins([]string{"*"}),
-				handlers.ExposedHeaders([]string{"grpc-status", "grpc-message"}),
-			)
-			handler = cors(h2c.NewHandler(handler, &http2.Server{}))
+				},
+				AllowedMethods: []string{http.MethodOptions, http.MethodPost},
+				AllowedOrigins: []string{"*"},
+				ExposedHeaders: []string{"grpc-status", "grpc-message"},
+			})
+			handler = corsH.Handler(h2c.NewHandler(handler, &http2.Server{}))
 			err = http.ListenAndServe(*addr, handler)
 		}
 		if err != nil {
