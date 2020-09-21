@@ -25,7 +25,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
@@ -59,15 +58,14 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "gRPC TLS Private Key")
 	flag.Parse()
 
-	// metrics server
+	// metrics server setup
 	log.Println("listening for metrics at", *metricsAddr)
 	grpc_prometheus.EnableHandlingTimeHistogram()
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*metricsAddr, nil)
 
-	// gRPC server
-	var srv *grpc.Server
-	var srvOpts = []grpc.ServerOption{
+	// gRPC server setup
+	var grpcServerOptions = []grpc.ServerOption{
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	}
@@ -77,15 +75,15 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to generate credentials %v", err)
 		}
-		srvOpts = append(srvOpts, grpc.Creds(creds))
+		grpcServerOptions = append(grpcServerOptions, grpc.Creds(creds))
 	}
 
-	srv = grpc.NewServer(srvOpts...)
-	grpc_prometheus.DefaultServerMetrics.InitializeMetrics(srv)
-	pb.RegisterGreeterService(srv, &pb.GreeterService{
+	grpcServer := grpc.NewServer(grpcServerOptions...)
+	grpc_prometheus.DefaultServerMetrics.InitializeMetrics(grpcServer)
+	pb.RegisterGreeterService(grpcServer, &pb.GreeterService{
 		SayHello: sayHello,
 	})
-	reflection.Register(srv)
+	reflection.Register(grpcServer)
 
 	log.Println("listening for gRPC at", *addr)
 	if *useGRPCGoServe {
@@ -95,7 +93,7 @@ func main() {
 			log.Fatalf("failed to listen: %v", err)
 		}
 		defer lis.Close()
-		if err := srv.Serve(lis); err != nil {
+		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %s", err)
 		}
 	} else {
@@ -118,29 +116,23 @@ func main() {
 			AllowedOrigins: []string{"*"},
 			ExposedHeaders: []string{"grpc-status", "grpc-message"},
 		})
-		handler := corsH.Handler(grpcHandlerFunc(srv))
 
+		h1s := &http.Server{
+			Addr:    *addr,
+			Handler: corsH.Handler(grpcweb.WrapServer(grpcServer)),
+		}
 		if *tlsCrt != "" && *tlsKey != "" {
 			log.Printf("using net/http.ListenAndServeTLS")
-			err = http.ListenAndServeTLS(*addr, *tlsCrt, *tlsKey, handler)
+			err = h1s.ListenAndServeTLS(*tlsCrt, *tlsKey)
 		} else {
 			log.Printf("using net/http.ListenAndServe plus h2c support")
-			err = http.ListenAndServe(*addr, h2c.NewHandler(handler, &http2.Server{}))
+			h2s := &http2.Server{}
+			h1s.Handler = h2c.NewHandler(h1s.Handler, h2s)
+			err = h1s.ListenAndServe()
 		}
 		if err != nil {
 			log.Fatalf("failed to serve: %s", err)
 		}
 	}
 	log.Println("Shutting down")
-}
-
-func grpcHandlerFunc(grpcServer *grpc.Server) http.Handler {
-	wrapped := grpcweb.WrapServer(grpcServer)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			wrapped.ServeHTTP(w, r)
-		} else {
-			http.DefaultServeMux.ServeHTTP(w, r)
-		}
-	})
 }
